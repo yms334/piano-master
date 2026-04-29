@@ -80,6 +80,8 @@ body{display:flex;flex-direction:column}
   padding:0 12px;border-bottom:1px solid var(--bdr);
   background:var(--s2);flex-shrink:0;overflow-x:auto;
 }
+button.ctrl.primary{background:var(--gold);border-color:var(--gold);color:#08080e;font-weight:600;}
+button.ctrl.primary:hover{background:var(--gold2);}
 #controls::-webkit-scrollbar{height:2px}
 #controls::-webkit-scrollbar-thumb{background:var(--bdr2)}
 button.ctrl{
@@ -165,7 +167,7 @@ input[type=range].ctrl{
     <button class="ov-btn primary" onclick="event.stopPropagation();loadDemo()">▶ デモを再生</button>
     <button class="ov-btn" onclick="event.stopPropagation();document.getElementById('midi-file').click()">📂 ファイルを開く</button>
   </div>
-  <div class="ov-hint">Space でスタート / ストップ &nbsp;·&nbsp; ↑↓ でオクターブ移動</div>
+  <div class="ov-hint">Space: 再生 &nbsp;·&nbsp; ←→: ±5s &nbsp;·&nbsp; ↑↓: 音量</div>
 </div>
 
 <div id="header">
@@ -173,6 +175,7 @@ input[type=range].ctrl{
     <div class="logo-dot"></div>
     PIANO MASTER
   </div>
+  <div id="hs-filename" style="flex:1;text-align:center;font-size:12px;color:var(--gold2);letter-spacing:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 16px;">—</div>
   <div id="hstats">
     <div class="hstat"><div class="hstat-l">TRACKS</div><div class="hstat-v" id="hs-tracks">—</div></div>
     <div class="hstat"><div class="hstat-l">BPM</div><div class="hstat-v" id="hs-bpm">—</div></div>
@@ -182,7 +185,8 @@ input[type=range].ctrl{
 </div>
 
 <div id="controls">
-  <button class="ctrl" onclick="triggerOpen()" title="MIDIファイルを開く">📂 開く</button>
+  <button class="ctrl" onclick="triggerOpen()" title="MIDIファイルを開く（複数選択可）">📂 開く</button>
+  <button class="ctrl" onclick="openPlaylist()" title="プレイリスト管理">☰ リスト</button>
   <div class="sep"></div>
   <select class="ctrl" id="track-sel" disabled onchange="onTrackChange()"><option>— Track —</option></select>
   <div class="sep"></div>
@@ -197,7 +201,11 @@ input[type=range].ctrl{
   <input type="range" class="ctrl" id="look-sl" min="2" max="8" step="0.5" value="4" oninput="onLookChange()">
   <span class="ctrl-label" id="look-lbl" style="min-width:28px">4s</span>
   <div class="sep"></div>
-  <span class="ctrl-label" style="color:var(--tx3)">Space: 再生 &nbsp;←→: ±5s &nbsp;↑↓: Oct</span>
+  <span class="ctrl-label">VOL</span>
+  <input type="range" class="ctrl" id="vol-sl" min="0" max="1" step="0.02" value="0.82" oninput="onVolChange()">
+  <span class="ctrl-label" id="vol-lbl" style="min-width:32px">82%</span>
+  <div class="sep"></div>
+  <span class="ctrl-label" style="color:var(--tx3)">Space: 再生 &nbsp;←→: ±5s &nbsp;↑↓: 音量</span>
 </div>
 <div id="progress-bar"><div id="progress-fill"></div></div>
 
@@ -208,9 +216,33 @@ input[type=range].ctrl{
   </div>
   <div id="kb-wrap">
     <div id="keyboard"></div>
-    <div id="oct-shift">OCT 0</div>
+    <div id="vol-indicator" style="position:absolute;top:6px;right:10px;font-family:'Syne Mono',monospace;font-size:10px;color:var(--tx3);letter-spacing:1px;">VOL 82%</div>
   </div>
 </div>
+
+<!-- PLAYLIST PANEL -->
+<div id="playlist-panel" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  z-index:120;background:var(--s1);border:1px solid var(--bdr2);min-width:520px;max-width:700px;
+  max-height:80vh;display:none;flex-direction:column;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--bdr);flex-shrink:0;">
+    <span style="font-family:'Syne Mono',monospace;font-size:13px;color:var(--gold);letter-spacing:2px;">PLAYLIST</span>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:11px;color:var(--tx2);">曲間</span>
+      <input type="number" id="gap-input" value="2" min="0" max="30" step="0.5"
+        style="width:52px;background:var(--s2);border:1px solid var(--bdr2);color:var(--tx);
+        padding:3px 6px;font-family:inherit;font-size:11px;text-align:center;">
+      <span style="font-size:11px;color:var(--tx2);">秒</span>
+      <button class="ctrl" onclick="closePlaylist()">✕ 閉じる</button>
+    </div>
+  </div>
+  <div id="playlist-list" style="overflow-y:auto;flex:1;padding:8px 0;"></div>
+  <div style="padding:12px 18px;border-top:1px solid var(--bdr);display:flex;gap:8px;flex-shrink:0;">
+    <button class="ctrl" onclick="triggerOpen()">＋ ファイルを追加</button>
+    <button class="ctrl" onclick="clearPlaylist()">🗑 リストをクリア</button>
+    <button class="ctrl primary" onclick="startPlaylist()" style="margin-left:auto;">▶ 最初から再生</button>
+  </div>
+</div>
+<div id="playlist-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:110;" onclick="closePlaylist()"></div>
 
 <script>
 // ══════════════════════════════════════════════════════════
@@ -523,7 +555,7 @@ function getAC(){
   if(!AC){
     AC=new AudioContext();
     masterGain=AC.createGain();
-    masterGain.gain.value=0.82;
+    masterGain.gain.value=volume;
     masterGain.connect(AC.destination);
   }
   if(AC.state==='suspended')AC.resume();
@@ -633,14 +665,18 @@ function synthDrum(note,vel,when){
 let midiResult=null;
 let allTracks=[],activeNotes=[],noteStates=[];
 let bpm=120,tsig={num:4,den:4};
-let speed=1.0,lookahead=4.0;
+let speed=1.0,lookahead=4.0,volume=0.82;
 let isPlaying=false,songOffset=0,startAT=0;
 let animID=null,scheduleTimer=null;
 let nextScheduleIndex=0;
-let octShift=0;
 let flowMode='top';
 let particles=[];
 let currentSongLen=0;
+
+// ── Playlist ──
+let playlist=[];        // [{name, buf, parsed}]
+let playlistIdx=0;      // currently playing index
+let playlistMode=false; // playing through list
 
 function curSongTime(){
   if(!isPlaying)return songOffset;
@@ -1075,6 +1111,13 @@ function gameLoop(){
   if(last&&ct>last.et+1.2){
     stopPlay();
     drawFrame(last.et+1.2);
+    // Advance playlist if active
+    if(playlistMode&&playlistIdx+1<playlist.length){
+      const gap=parseFloat(document.getElementById('gap-input').value)||2;
+      setTimeout(()=>loadPlaylistEntry(playlistIdx+1,true),gap*1000);
+    }else{
+      playlistMode=false;
+    }
     return;
   }
   animID=requestAnimationFrame(gameLoop);
@@ -1099,13 +1142,14 @@ function seekTo(pos){
 // ══════════════════════════════════════════════════════════
 // LOAD / TRACK / MODE
 // ══════════════════════════════════════════════════════════
-function loadParsed(res,autoStart=true){
+function loadParsed(res,autoStart=true,filename=''){
   midiResult=res;
   allTracks=res.noteTracks;
   bpm=res.bpm;
   tsig=res.tsig||{num:4,den:4};
   document.getElementById('hs-bpm').textContent=Math.round(bpm*speed);
   document.getElementById('hs-tracks').textContent=allTracks.length;
+  document.getElementById('hs-filename').textContent=filename||'—';
 
   const sel=document.getElementById('track-sel');
   sel.innerHTML='<option value="all">全トラック</option>';
@@ -1167,31 +1211,118 @@ function onSpeedChange(){
   }
 }
 function onLookChange(){lookahead=parseFloat(document.getElementById('look-sl').value);document.getElementById('look-lbl').textContent=lookahead.toFixed(1)+'s';}
-function triggerOpen(){document.getElementById('midi-file').click();}
+function triggerOpen(){
+  const fi=document.getElementById('midi-file');
+  fi.multiple=true;
+  fi.click();
+}
 
 function loadDemo(){
-  loadParsed(buildDemoNotes(),true);
+  const parsed=buildDemoNotes();
+  playlist=[{name:'Demo — きらきら星',parsed}];
+  playlistIdx=0;playlistMode=false;
+  loadParsed(parsed,true,'Demo — きらきら星');
+}
+
+// ── Playlist helpers ──
+function loadPlaylistEntry(idx,autoStart=true){
+  if(idx<0||idx>=playlist.length)return;
+  playlistIdx=idx;
+  renderPlaylistUI();
+  const entry=playlist[idx];
+  loadParsed(entry.parsed,autoStart,entry.name);
+}
+
+function startPlaylist(){
+  if(!playlist.length)return;
+  playlistMode=true;
+  closePlaylist();
+  loadPlaylistEntry(0,true);
+}
+
+function clearPlaylist(){
+  stopPlay();
+  playlist=[];
+  renderPlaylistUI();
+}
+
+function openPlaylist(){
+  renderPlaylistUI();
+  document.getElementById('playlist-panel').style.display='flex';
+  document.getElementById('playlist-backdrop').style.display='block';
+}
+function closePlaylist(){
+  document.getElementById('playlist-panel').style.display='none';
+  document.getElementById('playlist-backdrop').style.display='none';
+}
+
+function renderPlaylistUI(){
+  const list=document.getElementById('playlist-list');
+  if(!playlist.length){
+    list.innerHTML='<div style="padding:20px 18px;color:var(--tx3);font-size:12px;">MIDIファイルを追加してください</div>';
+    return;
+  }
+  list.innerHTML=playlist.map((e,i)=>`
+    <div class="pl-row ${i===playlistIdx?'pl-active':''}" data-idx="${i}" style="
+      display:flex;align-items:center;gap:10px;padding:8px 18px;cursor:pointer;
+      border-bottom:1px solid var(--bdr);transition:.12s;
+      ${i===playlistIdx?'background:rgba(200,168,74,0.08);':''}
+    " onclick="playlistRowClick(${i})">
+      <span style="font-family:'Syne Mono',monospace;font-size:10px;color:var(--tx3);min-width:22px;">${i+1}</span>
+      <span style="flex:1;font-size:12px;color:${i===playlistIdx?'var(--gold2)':'var(--tx)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${e.name}</span>
+      <span style="font-size:10px;color:var(--tx3);">${e.parsed.noteTracks.length} trk</span>
+      <button onclick="event.stopPropagation();removePlaylistEntry(${i})" style="
+        background:none;border:none;color:var(--tx3);cursor:pointer;font-size:13px;padding:2px 4px;
+      " title="削除">✕</button>
+    </div>
+  `).join('');
+}
+
+function playlistRowClick(idx){
+  playlistMode=true;
+  loadPlaylistEntry(idx,true);
+}
+function removePlaylistEntry(idx){
+  playlist.splice(idx,1);
+  if(playlistIdx>=playlist.length)playlistIdx=Math.max(0,playlist.length-1);
+  renderPlaylistUI();
+}
+
+function addFilesToPlaylist(files){
+  let loaded=0;
+  const toLoad=Array.from(files).filter(f=>f.name.endsWith('.mid')||f.name.endsWith('.midi'));
+  if(!toLoad.length)return;
+  toLoad.forEach(f=>{
+    const r=new FileReader();
+    r.onload=ev=>{
+      try{
+        const parsed=buildNoteTracks(parseMidiBuffer(ev.target.result));
+        playlist.push({name:f.name.replace(/\.(mid|midi)$/i,''),parsed});
+        loaded++;
+        if(loaded===toLoad.length){
+          renderPlaylistUI();
+          // If first ever load, start immediately
+          if(playlist.length===toLoad.length){
+            playlistMode=playlist.length>1;
+            loadPlaylistEntry(0,true);
+          }
+        }
+      }catch(err){alert('MIDI読み込みエラー: '+f.name+'\n'+err.message);}
+    };
+    r.readAsArrayBuffer(f);
+  });
 }
 
 document.getElementById('midi-file').addEventListener('change',e=>{
-  const f=e.target.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=ev=>{
-    try{loadParsed(buildNoteTracks(parseMidiBuffer(ev.target.result)),true);}catch(err){alert('MIDI読み込みエラー: '+err.message);}
-  };
-  r.readAsArrayBuffer(f);
+  if(e.target.files.length)addFilesToPlaylist(e.target.files);
   e.target.value='';
 });
 
 document.addEventListener('dragover',e=>e.preventDefault());
 document.addEventListener('drop',e=>{
   e.preventDefault();
-  const f=e.dataTransfer.files[0];
-  if(f&&(f.name.endsWith('.mid')||f.name.endsWith('.midi'))){
-    const r=new FileReader();
-    r.onload=ev=>{try{loadParsed(buildNoteTracks(parseMidiBuffer(ev.target.result)),true);}catch(err){alert('MIDI読み込みエラー: '+err.message);}};
-    r.readAsArrayBuffer(f);
-  }
+  const files=Array.from(e.dataTransfer.files).filter(f=>f.name.endsWith('.mid')||f.name.endsWith('.midi'));
+  if(files.length)addFilesToPlaylist(files);
 });
 const uz=document.querySelector('.ov-card');
 if(uz){
@@ -1224,11 +1355,19 @@ document.addEventListener('keydown',ev=>{
     const max=last?last.et:0;
     seekTo(Math.min(max,curSongTime()+5));return;
   }
-  if(ev.key==='ArrowUp'){ev.preventDefault();octShift=Math.min(3,octShift+1);updOctLbl();return;}
-  if(ev.key==='ArrowDown'){ev.preventDefault();octShift=Math.max(-3,octShift-1);updOctLbl();return;}
+  if(ev.key==='ArrowUp'){
+    ev.preventDefault();
+    volume=Math.min(1,Math.round((volume+0.05)*100)/100);
+    applyVolume();return;
+  }
+  if(ev.key==='ArrowDown'){
+    ev.preventDefault();
+    volume=Math.max(0,Math.round((volume-0.05)*100)/100);
+    applyVolume();return;
+  }
   const base=KEY_BASE[ev.key];
   if(base!==undefined){
-    const midi=base+octShift*12;
+    const midi=base;
     if(midi>=0&&midi<=127&&!keyDown.has(midi)){
       keyDown.add(midi);synth(midi,0.35,0.45);
       litKey(midi,'lit');
@@ -1236,7 +1375,20 @@ document.addEventListener('keydown',ev=>{
     }
   }
 });
-function updOctLbl(){document.getElementById('oct-shift').textContent='OCT '+(octShift>=0?'+':'')+octShift;}
+function applyVolume(){
+  if(masterGain){
+    masterGain.gain.cancelScheduledValues(getAC().currentTime);
+    masterGain.gain.setValueAtTime(masterGain.gain.value,getAC().currentTime);
+    masterGain.gain.linearRampToValueAtTime(volume,getAC().currentTime+0.04);
+  }
+  document.getElementById('vol-sl').value=volume;
+  document.getElementById('vol-lbl').textContent=Math.round(volume*100)+'%';
+  document.getElementById('vol-indicator').textContent='VOL '+Math.round(volume*100)+'%';
+}
+function onVolChange(){
+  volume=parseFloat(document.getElementById('vol-sl').value);
+  applyVolume();
+}
 
 // mouse / touch on keyboard
 const kbEl=document.getElementById('keyboard');
@@ -1260,7 +1412,7 @@ window.addEventListener('resize',()=>{resizeCanvas();buildKeyboard();drawFrame(c
 resizeCanvas();
 buildKeyboard();
 drawFrame(0);
-updOctLbl();
+applyVolume();
 setMode('top');
 syncKeyboardAnchor(0);
 </script>
