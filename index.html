@@ -296,6 +296,8 @@ function buildNoteTracks(parsed){
   const{div,tracks}=parsed;
   const all=[];tracks.forEach(tr=>tr.forEach(e=>all.push(e)));
   all.sort((a,b)=>a.tick-b.tick);
+
+  // Build tempo map (entries sorted by tick)
   const tmap=[{tick:0,tempo:500000,time:0}];
   let tsig={num:4,den:4};
   for(const e of all){
@@ -306,12 +308,22 @@ function buildNoteTracks(parsed){
     }
     if(e.type==='timesig')tsig={num:e.num,den:e.den};
   }
+
+  // tick → seconds
   const t2s=(tick)=>{
     let l=tmap[0];
     for(let i=1;i<tmap.length;i++){if(tmap[i].tick>tick)break;l=tmap[i];}
     return l.time+(tick-l.tick)*(l.tempo/div)/1e6;
   };
-  const bpm=Math.round(60e6/tmap[Math.min(1,tmap.length-1)].tempo);
+
+  // seconds → BPM at that moment
+  const s2bpm=(sec)=>{
+    let l=tmap[0];
+    for(let i=1;i<tmap.length;i++){if(tmap[i].time>sec)break;l=tmap[i];}
+    return Math.round(60e6/l.tempo);
+  };
+
+  const initialBpm=Math.round(60e6/tmap[0].tempo);
 
   const noteTracks=[];
   tracks.forEach((track,ti)=>{
@@ -339,8 +351,9 @@ function buildNoteTracks(parsed){
     if(notes.length)noteTracks.push({name:tname,notes,index:ti});
   });
 
-  return{noteTracks,bpm,tsig,tmap,div,t2s};
+  return{noteTracks,bpm:initialBpm,tsig,tmap,div,s2bpm};
 }
+
 
 function buildDemoNotes(){
   const melody=[
@@ -351,8 +364,14 @@ function buildDemoNotes(){
     [60,16],[60,16.5],[67,17],[67,17.5],[69,18],[69,18.5],[67,19],
     [65,20],[65,20.5],[64,21],[64,21.5],[62,22],[62,22.5],[60,23],
   ];
-  const notes=melody.map(([midi,st])=>({midi,st,et:st+0.45,dur:0.45,vel:0.8,track:0,spawned:false}));
-  return{noteTracks:[{name:'きらきら星',notes,index:0}],bpm:100,tsig:{num:4,den:4}};
+  const notes=melody.map(([midi,st])=>({midi,st,et:st+0.45,dur:0.45,vel:0.8,track:0,ch:0,isDrum:false,spawned:false}));
+  const demoTmap=[{tick:0,tempo:600000,time:0}];
+  return{
+    noteTracks:[{name:'きらきら星',notes,index:0}],
+    bpm:100,tsig:{num:4,den:4},
+    tmap:demoTmap,
+    s2bpm:()=>100,
+  };
 }
 
 // ══════════════════════════════════════════════════════════
@@ -665,6 +684,8 @@ function synthDrum(note,vel,when){
 let midiResult=null;
 let allTracks=[],activeNotes=[],noteStates=[];
 let bpm=120,tsig={num:4,den:4};
+let tmap=[{tick:0,tempo:500000,time:0}]; // global tempo map for current song
+let s2bpm=()=>120;                        // seconds → BPM lookup for current song
 let speed=1.0,lookahead=4.0,volume=0.82;
 let isPlaying=false,songOffset=0,startAT=0;
 let animID=null,scheduleTimer=null;
@@ -716,6 +737,42 @@ function timeToX(nt,ct){
   const dy=nt-ct;
   const hitX=getHitX(W);
   return hitX+(dy/lookahead)*(W-hitX);
+}
+
+// Generate beat positions (song-seconds) in range [from,to] using tmap
+function beatTimes(from,to){
+  const beats=[];
+  if(!tmap||!tmap.length)return beats;
+  let cumBeats=0; // running beat count across segments for measure detection
+  for(let seg=0;seg<tmap.length;seg++){
+    const entry=tmap[seg];
+    const nextEntry=tmap[seg+1];
+    const segStart=entry.time;
+    const segEnd=nextEntry?nextEntry.time:1e9;
+    const beatSec=(entry.tempo/1e6)/speed;
+    if(beatSec<=0){cumBeats+=0;continue;}
+
+    const rangeStart=Math.max(from,segStart);
+    const rangeEnd=Math.min(to,segEnd);
+    if(rangeStart>rangeEnd+beatSec*0.01){
+      // Count beats in this segment for cumBeats
+      if(nextEntry)cumBeats+=Math.round((segEnd-segStart)/beatSec);
+      continue;
+    }
+
+    // First beat at or after rangeStart
+    const firstOff=Math.ceil((rangeStart-segStart)/beatSec-0.0001)*beatSec;
+    let t=segStart+Math.max(0,firstOff);
+    const startBeatIdx=Math.round((t-segStart)/beatSec);
+
+    let i=0;
+    while(t<=rangeEnd+beatSec*0.001){
+      beats.push({t, beatIdx: cumBeats+startBeatIdx+i});
+      t+=beatSec; i++;
+    }
+    if(nextEntry)cumBeats+=Math.round((segEnd-segStart)/beatSec);
+  }
+  return beats;
 }
 
 // Returns the Y center of a key in right mode — mirrors buildKeyboard math exactly
@@ -879,19 +936,15 @@ function drawFrame(ct){
       const x=keyX(m);if(x===null)continue;
       rc.beginPath();rc.moveTo(x-kbKeyW/2,0);rc.lineTo(x-kbKeyW/2,H);rc.stroke();
     }
-    // Beat/measure lines
-    if(bpm>0){
-      const beatT=60/bpm;
-      const firstBeat=Math.floor((ct-0.1)/beatT)*beatT;
-      for(let bt=firstBeat;bt<ct+lookahead+beatT;bt+=beatT){
-        const y=timeToY(bt,ct);if(y<0||y>H)continue;
-        const isMeasure=Math.abs(Math.round(bt/beatT)%tsig.num)<0.1;
-        rc.strokeStyle=isMeasure?'rgba(201,168,76,0.22)':'rgba(255,255,255,0.055)';
-        rc.lineWidth=isMeasure?1.2:0.5;
-        rc.setLineDash(isMeasure?[]:[4,4]);
-        rc.beginPath();rc.moveTo(0,y);rc.lineTo(W,y);rc.stroke();
-        rc.setLineDash([]);
-      }
+    // Beat/measure lines using tmap-aware beatTimes()
+    for(const {t,beatIdx} of beatTimes(ct-0.1, ct+lookahead+0.2)){
+      const y=timeToY(t,ct);if(y<0||y>H)continue;
+      const isMeasure=beatIdx%tsig.num===0;
+      rc.strokeStyle=isMeasure?'rgba(201,168,76,0.22)':'rgba(255,255,255,0.055)';
+      rc.lineWidth=isMeasure?1.2:0.5;
+      rc.setLineDash(isMeasure?[]:[4,4]);
+      rc.beginPath();rc.moveTo(0,y);rc.lineTo(W,y);rc.stroke();
+      rc.setLineDash([]);
     }
     // Hit zone — line at y=H (canvas bottom = keyboard top)
     rc.fillStyle='rgba(201,168,76,0.07)';rc.fillRect(0,H-HIT_H,W,HIT_H);
@@ -955,19 +1008,15 @@ function drawFrame(ct){
       const y=wi*wkH;
       rc.beginPath();rc.moveTo(hitX,y);rc.lineTo(W,y);rc.stroke();
     }
-    // Beat/measure lines (vertical in right mode)
-    if(bpm>0){
-      const beatT=60/bpm;
-      const firstBeat=Math.floor((ct-0.1)/beatT)*beatT;
-      for(let bt=firstBeat;bt<ct+lookahead+beatT;bt+=beatT){
-        const x=timeToX(bt,ct);if(x<hitX||x>W)continue;
-        const isMeasure=Math.abs(Math.round(bt/beatT)%tsig.num)<0.1;
-        rc.strokeStyle=isMeasure?'rgba(201,168,76,0.22)':'rgba(255,255,255,0.055)';
-        rc.lineWidth=isMeasure?1.2:0.5;
-        rc.setLineDash(isMeasure?[]:[4,4]);
-        rc.beginPath();rc.moveTo(x,0);rc.lineTo(x,H);rc.stroke();
-        rc.setLineDash([]);
-      }
+    // Beat/measure lines using tmap-aware beatTimes()
+    for(const {t,beatIdx} of beatTimes(ct-0.1, ct+lookahead+0.2)){
+      const x=timeToX(t,ct);if(x<hitX||x>W)continue;
+      const isMeasure=beatIdx%tsig.num===0;
+      rc.strokeStyle=isMeasure?'rgba(201,168,76,0.22)':'rgba(255,255,255,0.055)';
+      rc.lineWidth=isMeasure?1.2:0.5;
+      rc.setLineDash(isMeasure?[]:[4,4]);
+      rc.beginPath();rc.moveTo(x,0);rc.lineTo(x,H);rc.stroke();
+      rc.setLineDash([]);
     }
     // Hit zone
     rc.fillStyle='rgba(201,168,76,0.07)';rc.fillRect(hitX-24,0,24,H);
@@ -1107,6 +1156,8 @@ function gameLoop(){
   if(!isPlaying)return;
   const ct=curSongTime();
   drawFrame(ct);
+  // Update BPM display to current tempo at playhead
+  document.getElementById('hs-bpm').textContent=Math.round(s2bpm(ct/speed)*speed);
   const last=activeNotes[activeNotes.length-1];
   if(last&&ct>last.et+1.2){
     stopPlay();
@@ -1147,6 +1198,8 @@ function loadParsed(res,autoStart=true,filename=''){
   allTracks=res.noteTracks;
   bpm=res.bpm;
   tsig=res.tsig||{num:4,den:4};
+  tmap=res.tmap||[{tick:0,tempo:500000,time:0}];
+  s2bpm=res.s2bpm||(()=>res.bpm||120);
   document.getElementById('hs-bpm').textContent=Math.round(bpm*speed);
   document.getElementById('hs-tracks').textContent=allTracks.length;
   document.getElementById('hs-filename').textContent=filename||'—';
