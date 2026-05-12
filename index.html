@@ -220,8 +220,10 @@ input[type=range].ctrl{
   <div class="go-card">
     <div class="go-title">GAME OVER</div>
     <div class="go-sub">落下しました</div>
-    <div class="go-stat" id="go-time">0:00</div>
-    <div style="font-size:11px;color:var(--tx3);margin-top:4px;">生存時間</div>
+    <div class="go-stat" id="go-score" style="font-size:32px;color:var(--gold2);">0</div>
+    <div style="font-size:11px;color:var(--tx3);margin-top:2px;">SCORE</div>
+    <div class="go-stat" id="go-time" style="font-size:18px;margin-top:12px;">0:00</div>
+    <div style="font-size:11px;color:var(--tx3);margin-top:2px;">生存時間</div>
     <div class="go-btns">
       <button class="ctrl" onclick="ballRetry()">↺ リトライ</button>
       <button class="ctrl primary" onclick="closeGameOver()">✕ 閉じる</button>
@@ -233,9 +235,11 @@ input[type=range].ctrl{
 <div id="clear-overlay">
   <div class="clear-card">
     <div class="clear-title">✦ CLEAR ✦</div>
-    <div class="clear-sub">こんな無意味なことしてるなら勉強した方がマシだよ</div>
-    <div class="go-stat" id="clear-time">0:00</div>
-    <div style="font-size:11px;color:var(--tx3);margin-top:4px;">生存時間</div>
+    <div class="clear-sub">最後まで耐え切りました！</div>
+    <div class="go-stat" id="clear-score" style="font-size:32px;color:var(--cyan);">0</div>
+    <div style="font-size:11px;color:var(--tx3);margin-top:2px;">SCORE</div>
+    <div class="go-stat" id="clear-time" style="font-size:18px;margin-top:12px;">0:00</div>
+    <div style="font-size:11px;color:var(--tx3);margin-top:2px;">生存時間</div>
     <div class="go-btns">
       <button class="ctrl" onclick="ballRetry()">↺ もう一度</button>
       <button class="ctrl primary" onclick="closeClear()">✕ 閉じる</button>
@@ -777,9 +781,10 @@ const BALL_R=13;
 const BALL_GRAVITY=1400; // px/s²
 const BALL_JUMP_V=-520;  // px/s (negative = up)
 const BALL_MAX_JUMPS=2;
-let ball={x:0,y:0,vy:0,jumps:0,onGround:false,dead:false};
+let ball={x:0,y:0,vy:0,jumps:0,onGround:false,dead:false,frozen:true};
 let ballActive=false;
 let ballSurviveTime=0;
+let ballScore=0;
 let lastFrameTime=null;
 
 function curSongTime(){
@@ -1264,6 +1269,7 @@ function initBall(){
   ball.frozen=true; // wait until first note hits the line
   ballActive=true;
   ballSurviveTime=0;
+  ballScore=0;
   lastFrameTime=null;
 
   // Place ball above the first note's top surface
@@ -1301,6 +1307,12 @@ function updateBallPhysics(dt,ct){
   }
 
   ballSurviveTime+=dt;
+
+  // Score: rate proportional to height (1 - y/H), base 100pts/s, max 500pts/s
+  // Clamped to [0,1] so score is always non-decreasing
+  const H2=canvas.height||600;
+  const heightRatio=Math.max(0,Math.min(1,1-ball.y/H2));
+  ballScore+=Math.round((100+heightRatio*400)*dt*10)/10;
 
   const prevY=ball.y;
   const prevBottom=ball.y+BALL_R;
@@ -1366,6 +1378,7 @@ function showGameOver(){
   const t=ballSurviveTime;
   const min=Math.floor(t/60);const sec=Math.floor(t%60);
   document.getElementById('go-time').textContent=min+':'+String(sec).padStart(2,'0');
+  document.getElementById('go-score').textContent=Math.floor(ballScore).toLocaleString();
   document.getElementById('go-overlay').style.display='flex';
 }
 
@@ -1377,6 +1390,7 @@ function showClear(){
   const t=ballSurviveTime;
   const min=Math.floor(t/60);const sec=Math.floor(t%60);
   document.getElementById('clear-time').textContent=min+':'+String(sec).padStart(2,'0');
+  document.getElementById('clear-score').textContent=Math.floor(ballScore).toLocaleString();
   document.getElementById('clear-overlay').style.display='flex';
 }
 
@@ -1495,16 +1509,48 @@ function drawBallMode(ct){
   updateParticles();
   drawBall();
 
-  // HUD: survive time
-  if(ballActive&&!ball.dead){
+  // HUD
+  if(ballActive&&!ball.dead||ball.dead){
     const t=ballSurviveTime;
     const min=Math.floor(t/60);const sec=Math.floor(t%60);
-    rc.fillStyle='rgba(201,168,76,0.7)';
-    rc.font='12px "Syne Mono",monospace';
-    rc.textAlign='left';
-    rc.fillText('SURVIVE  '+min+':'+String(sec).padStart(2,'0'),hitX+12,20);
+    const scoreInt=Math.floor(ballScore);
+
+    // Score — top center, large
+    rc.save();
+    rc.font='bold 28px "Syne Mono",monospace';
+    rc.textAlign='center';
+    rc.fillStyle='rgba(255,255,255,0.9)';
+    rc.fillText(scoreInt.toLocaleString(),W/2,34);
+    rc.font='10px "Syne Mono",monospace';
+    rc.fillStyle='rgba(255,255,255,0.3)';
+    rc.fillText('SCORE',W/2,50);
     rc.textAlign='start';
+
+    // Survive time — top left
+    rc.font='12px "Syne Mono",monospace';
+    rc.fillStyle='rgba(201,168,76,0.65)';
+    rc.fillText(min+':'+String(sec).padStart(2,'0'),hitX+12,22);
+    rc.font='9px "Syne Mono",monospace';
+    rc.fillStyle='rgba(255,255,255,0.2)';
+    rc.fillText('TIME',hitX+12,35);
+    rc.restore();
   }
+
+  // Height bar — thin strip on left edge showing ball altitude
+  {
+    const barH=H-20;const barX=hitX-8;const barW=4;
+    rc.save();
+    rc.globalAlpha=0.18;
+    rc.fillStyle='#fff';rc.fillRect(barX,10,barW,barH);
+    const ratio=Math.max(0,Math.min(1,1-ball.y/H));
+    // gradient: bottom=dim, top=bright cyan
+    const g=rc.createLinearGradient(0,10+barH,0,10);
+    g.addColorStop(0,'rgba(0,212,184,0.3)');g.addColorStop(1,'rgba(0,212,184,1)');
+    rc.globalAlpha=0.7;
+    rc.fillStyle=g;rc.fillRect(barX,10+barH*(1-ratio),barW,barH*ratio);
+    rc.restore();
+  }
+
   // J key hint
   rc.fillStyle='rgba(255,255,255,0.12)';
   rc.font='10px "Syne Mono",monospace';
