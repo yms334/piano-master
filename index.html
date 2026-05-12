@@ -82,6 +82,37 @@ body{display:flex;flex-direction:column}
 }
 button.ctrl.primary{background:var(--gold);border-color:var(--gold);color:#08080e;font-weight:600;}
 button.ctrl.primary:hover{background:var(--gold2);}
+#go-overlay{
+  position:fixed;inset:0;background:rgba(8,8,14,0.92);
+  display:none;align-items:center;justify-content:center;
+  z-index:180;flex-direction:column;gap:0;
+}
+.go-card{
+  border:1px solid #ff3355;background:var(--s1);
+  padding:48px 64px;text-align:center;min-width:360px;position:relative;overflow:hidden;
+}
+.go-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,#ff3355,transparent);}
+.go-title{font-family:'Syne Mono',monospace;font-size:36px;letter-spacing:6px;
+  color:#ff3355;margin-bottom:8px;}
+.go-sub{color:var(--tx2);font-size:12px;margin-bottom:28px;}
+.go-stat{font-family:'Syne Mono',monospace;font-size:22px;color:var(--gold2);margin:6px 0;}
+.go-btns{display:flex;gap:12px;margin-top:28px;justify-content:center;}
+/* Clear screen */
+#clear-overlay{
+  position:fixed;inset:0;background:rgba(8,8,14,0.92);
+  display:none;align-items:center;justify-content:center;
+  z-index:180;flex-direction:column;gap:0;
+}
+.clear-card{
+  border:1px solid var(--cyan);background:var(--s1);
+  padding:48px 64px;text-align:center;min-width:360px;position:relative;overflow:hidden;
+}
+.clear-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--cyan),transparent);}
+.clear-title{font-family:'Syne Mono',monospace;font-size:36px;letter-spacing:6px;
+  color:var(--cyan);margin-bottom:8px;}
+.clear-sub{color:var(--tx2);font-size:12px;margin-bottom:28px;}
 #controls::-webkit-scrollbar{height:2px}
 #controls::-webkit-scrollbar-thumb{background:var(--bdr2)}
 button.ctrl{
@@ -184,6 +215,34 @@ input[type=range].ctrl{
   </div>
 </div>
 
+<!-- GAME OVER OVERLAY -->
+<div id="go-overlay">
+  <div class="go-card">
+    <div class="go-title">GAME OVER</div>
+    <div class="go-sub">落下しました</div>
+    <div class="go-stat" id="go-time">0:00</div>
+    <div style="font-size:11px;color:var(--tx3);margin-top:4px;">生存時間</div>
+    <div class="go-btns">
+      <button class="ctrl" onclick="ballRetry()">↺ リトライ</button>
+      <button class="ctrl primary" onclick="closeGameOver()">✕ 閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- CLEAR OVERLAY -->
+<div id="clear-overlay">
+  <div class="clear-card">
+    <div class="clear-title">✦ CLEAR ✦</div>
+    <div class="clear-sub">最後まで耐え切りました！</div>
+    <div class="go-stat" id="clear-time">0:00</div>
+    <div style="font-size:11px;color:var(--tx3);margin-top:4px;">生存時間</div>
+    <div class="go-btns">
+      <button class="ctrl" onclick="ballRetry()">↺ もう一度</button>
+      <button class="ctrl primary" onclick="closeClear()">✕ 閉じる</button>
+    </div>
+  </div>
+</div>
+
 <div id="controls">
   <button class="ctrl" onclick="triggerOpen()" title="MIDIファイルを開く（複数選択可）">📂 開く</button>
   <button class="ctrl" onclick="openPlaylist()" title="プレイリスト管理">☰ リスト</button>
@@ -192,6 +251,7 @@ input[type=range].ctrl{
   <div class="sep"></div>
   <button class="ctrl" id="mode-top-btn" onclick="setMode('top')" title="上から流れる">↓ TOP</button>
   <button class="ctrl" id="mode-right-btn" onclick="setMode('right')" title="右から流れる">← RIGHT</button>
+  <button class="ctrl" id="mode-ball-btn" onclick="setMode('ball')" title="ボールゲームモード">● BALL</button>
   <div class="sep"></div>
   <span class="ctrl-label">SPEED</span>
   <input type="range" class="ctrl" id="speed-sl" min="0.3" max="2" step="0.05" value="1" oninput="onSpeedChange()">
@@ -205,7 +265,7 @@ input[type=range].ctrl{
   <input type="range" class="ctrl" id="vol-sl" min="0" max="1" step="0.02" value="0.82" oninput="onVolChange()">
   <span class="ctrl-label" id="vol-lbl" style="min-width:32px">82%</span>
   <div class="sep"></div>
-  <span class="ctrl-label" style="color:var(--tx3)">Space: 再生 &nbsp;←→: ±5s &nbsp;↑↓: 音量</span>
+  <span class="ctrl-label" style="color:var(--tx3)">Space: 再生 &nbsp;←→: ±5s &nbsp;↑↓: 音量 &nbsp;J: ジャンプ(BALL)</span>
 </div>
 <div id="progress-bar"><div id="progress-fill"></div></div>
 
@@ -419,16 +479,29 @@ function syncKeyboardAnchor(totalW=0){
 
 function buildKeyboard(){
   const kb=document.getElementById('keyboard');
-  kb.innerHTML='';
-  for(const k in kbEls)delete kbEls[k];
+  const topWrap=document.getElementById('kb-wrap');
+  const rollWrap=document.getElementById('roll-wrap');
 
+  // Always recalculate kbNumW so keyY() works in all modes
   let fW=kbMin;while(isBlack(fW))fW--;
   let lW=kbMax;while(isBlack(lW))lW++;
   kbStartWI=wkIdx(fW);kbEndWI=wkIdx(lW);
   kbNumW=kbEndWI-kbStartWI+1;
 
-  const topWrap=document.getElementById('kb-wrap');
-  const rollWrap=document.getElementById('roll-wrap');
+  // Ball mode: no keyboard needed
+  if(flowMode==='ball'){
+    kb.innerHTML='';for(const k in kbEls)delete kbEls[k];
+    topWrap.style.display='none';
+    topWrap.style.height='0px';
+    topWrap.style.borderTop='none';
+    // Make sure keyboard element doesn't linger in roll-wrap
+    if(kb.parentElement===rollWrap)rollWrap.removeChild(kb);
+    if(kb.parentElement!==topWrap)topWrap.appendChild(kb);
+    return;
+  }
+
+  kb.innerHTML='';
+  for(const k in kbEls)delete kbEls[k];
 
   if(flowMode==='top'){
     // ── HORIZONTAL keyboard (top mode) ──
@@ -699,6 +772,16 @@ let playlist=[];        // [{name, buf, parsed}]
 let playlistIdx=0;      // currently playing index
 let playlistMode=false; // playing through list
 
+// ── Ball game state ──
+const BALL_R=13;
+const BALL_GRAVITY=1400; // px/s²
+const BALL_JUMP_V=-520;  // px/s (negative = up)
+const BALL_MAX_JUMPS=2;
+let ball={x:0,y:0,vy:0,jumps:0,onGround:false,dead:false};
+let ballActive=false;
+let ballSurviveTime=0;
+let lastFrameTime=null;
+
 function curSongTime(){
   if(!isPlaying)return songOffset;
   return (getAC().currentTime-startAT)*speed+songOffset;
@@ -721,7 +804,7 @@ function resizeCanvas(){
 const HIT_H=64;
 
 function getHitX(W=canvas.width){
-  if(flowMode==='right') return 135;
+  if(flowMode==='right'||flowMode==='ball') return 135;
   const kbRight=kbOffX+kbNumW*kbKeyW;
   return Math.max(16, Math.min(W-16, Math.round(kbRight)));
 }
@@ -913,6 +996,19 @@ function drawHitZone(ctx,W,H){
 function drawFrame(ct){
   const W=canvas.width,H=canvas.height;
   rc.clearRect(0,0,W,H);
+
+  if(flowMode==='ball'){
+    drawBallMode(ct);
+    // update progress
+    const last=activeNotes[activeNotes.length-1];
+    if(last){
+      document.getElementById('hs-now').textContent=formatTime(ct);
+      const prog=Math.min(1,Math.max(0,ct/(last.et+0.5)));
+      const pf=document.getElementById('progress-fill');
+      if(pf)pf.style.width=(prog*100)+'%';
+    }
+    return;
+  }
 
   // ── Background ──
   rc.fillStyle='#08080e';rc.fillRect(0,0,W,H);
@@ -1117,8 +1213,10 @@ function startPlay(){
     isPlaying=true;
     startAT=ac.currentTime;
     nextScheduleIndex=seekIndexByTime(songOffset);
+    if(flowMode==='ball'&&(songOffset===0||ball.dead)){initBall();}
+    lastFrameTime=null;
     if(animID)cancelAnimationFrame(animID);
-    gameLoop();
+    animID=requestAnimationFrame(gameLoop);
     scheduleUpcoming();
   }
 }
@@ -1152,17 +1250,294 @@ function restartFromCurrentPosition(){
   startPlay();
 }
 
-function gameLoop(){
+// ══════════════════════════════════════════════════════════
+// BALL PHYSICS
+// ══════════════════════════════════════════════════════════
+function initBall(){
+  const H=canvas.height||600;
+  const W=canvas.width||900;
+  ball.x=getHitX(W);
+  ball.vy=0;
+  ball.jumps=0;
+  ball.onGround=false;
+  ball.dead=false;
+  ball.frozen=true; // wait until first note hits the line
+  ballActive=true;
+  ballSurviveTime=0;
+  lastFrameTime=null;
+
+  // Place ball above the first note's top surface
+  const firstNote=noteStates[0];
+  if(firstNote){
+    const noteTop=keyY(firstNote.midi)-keyNoteH(firstNote.midi)/2;
+    ball.y=noteTop-BALL_R-60;
+  }else{
+    ball.y=H*0.35;
+  }
+  document.getElementById('go-overlay').style.display='none';
+}
+
+function ballJump(){
+  if(flowMode!=='ball'||!ballActive||ball.dead)return;
+  if(ball.jumps<BALL_MAX_JUMPS){
+    ball.vy=BALL_JUMP_V;
+    ball.jumps++;
+    ball.onGround=false;
+    ball.frozen=false; // jump cancels freeze early if player wants
+  }
+}
+
+function updateBallPhysics(dt,ct){
+  if(!ballActive||ball.dead)return;
+
+  // Stay frozen until the first note reaches the hit line
+  if(ball.frozen){
+    const firstNote=noteStates[0];
+    if(!firstNote||ct<firstNote.st){
+      lastFrameTime=null; // reset so dt won't spike on unfreeze
+      return;
+    }
+    ball.frozen=false;
+  }
+
+  ballSurviveTime+=dt;
+
+  const prevY=ball.y;
+  const prevBottom=ball.y+BALL_R;
+  ball.vy+=BALL_GRAVITY*dt;
+  ball.y+=ball.vy*dt;
+  const newBottom=ball.y+BALL_R;
+
+  ball.onGround=false;
+  const W=canvas.width,H=canvas.height;
+  const ct2=curSongTime(); // freshest time for X calc
+
+  // NOTE_END_BUF: extra seconds added to note end for collision & display
+  // so consecutive same-pitch notes never have a gap
+  const NOTE_END_BUF=0.08;
+
+  // Collect platforms: notes whose rendered X range covers the ball's X (hitX)
+  const platforms=[];
+  const si=findFirstVisibleIndex(ct2-lookahead-0.5);
+  const ei=findLastVisibleIndex(ct2+lookahead+0.5);
+  for(let i=si;i<=ei;i++){
+    const n=noteStates[i];if(!n)continue;
+    const x1=timeToX(n.st,ct2);
+    const x2=timeToX(n.et+NOTE_END_BUF,ct2);
+    const lx=Math.min(x1,x2), rx=Math.max(x1,x2);
+    // Ball's X (hitX) must be within the note's rendered horizontal span
+    if(ball.x<lx-BALL_R||ball.x>rx+BALL_R)continue;
+    const cy=keyY(n.midi);
+    const nh=keyNoteH(n.midi);
+    platforms.push({top:cy-nh/2, bot:cy+nh/2});
+  }
+
+  // Sort: highest surface first (smallest y)
+  platforms.sort((a,b)=>a.top-b.top);
+
+  // Sweep collision — check both top and bottom surfaces
+  for(const p of platforms){
+    // Landing on top
+    if(ball.vy>=0 && prevBottom<=p.top+2 && newBottom>=p.top){
+      ball.y=p.top-BALL_R;
+      ball.vy=0;
+      ball.onGround=true;
+      ball.jumps=0;
+      break;
+    }
+    // Hitting ceiling from below
+    if(ball.vy<0 && (prevY-BALL_R)>=p.bot-2 && (ball.y-BALL_R)<=p.bot){
+      ball.vy=0;
+      ball.y=p.bot+BALL_R;
+      break;
+    }
+  }
+
+  // Game over: fell off screen
+  if(ball.y-BALL_R>H+60){
+    ball.dead=true;
+    ballActive=false;
+    stopPlay();
+    showGameOver();
+  }
+}
+
+function showGameOver(){
+  const t=ballSurviveTime;
+  const min=Math.floor(t/60);const sec=Math.floor(t%60);
+  document.getElementById('go-time').textContent=min+':'+String(sec).padStart(2,'0');
+  document.getElementById('go-overlay').style.display='flex';
+}
+
+function closeGameOver(){
+  document.getElementById('go-overlay').style.display='none';
+}
+
+function showClear(){
+  const t=ballSurviveTime;
+  const min=Math.floor(t/60);const sec=Math.floor(t%60);
+  document.getElementById('clear-time').textContent=min+':'+String(sec).padStart(2,'0');
+  document.getElementById('clear-overlay').style.display='flex';
+}
+
+function closeClear(){
+  document.getElementById('clear-overlay').style.display='none';
+}
+
+function ballRetry(){
+  closeGameOver();
+  closeClear();
+  songOffset=0;
+  for(const n of noteStates)n.spawned=false;
+  initBall();
+  startPlay();
+}
+
+// ══════════════════════════════════════════════════════════
+// DRAW BALL
+// ══════════════════════════════════════════════════════════
+function drawBall(){
+  if(flowMode!=='ball')return;
+  const bx=ball.x, by=ball.y, r=BALL_R;
+  // Shadow
+  rc.save();
+  rc.globalAlpha=0.25;
+  rc.fillStyle='#000';
+  rc.beginPath();rc.ellipse(bx,by+r+3,r*0.7,r*0.2,0,0,Math.PI*2);rc.fill();
+  rc.restore();
+  // Glow
+  const grd=rc.createRadialGradient(bx,by,0,bx,by,r*2.2);
+  grd.addColorStop(0,'rgba(0,212,184,0.18)');
+  grd.addColorStop(1,'rgba(0,212,184,0)');
+  rc.fillStyle=grd;
+  rc.beginPath();rc.arc(bx,by,r*2.2,0,Math.PI*2);rc.fill();
+  // Body
+  const bodyGrd=rc.createRadialGradient(bx-r*0.3,by-r*0.3,r*0.1,bx,by,r);
+  bodyGrd.addColorStop(0,'#a0fff0');
+  bodyGrd.addColorStop(0.4,'#00d4b8');
+  bodyGrd.addColorStop(1,'#007a6a');
+  rc.fillStyle=bodyGrd;
+  rc.beginPath();rc.arc(bx,by,r,0,Math.PI*2);rc.fill();
+  // Rim
+  rc.strokeStyle='rgba(255,255,255,0.5)';rc.lineWidth=1;
+  rc.beginPath();rc.arc(bx,by,r,0,Math.PI*2);rc.stroke();
+  // Jump indicator pips
+  for(let i=0;i<BALL_MAX_JUMPS;i++){
+    const used=i<ball.jumps;
+    rc.fillStyle=used?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.85)';
+    rc.beginPath();rc.arc(bx-4+i*8,by+r+9,2.5,0,Math.PI*2);rc.fill();
+  }
+}
+
+function drawBallMode(ct){
+  const W=canvas.width,H=canvas.height;
+  rc.fillStyle='#08080e';rc.fillRect(0,0,W,H);
+  const hitX=getHitX(W);
+  const wkH=Math.max(8,Math.floor(H/kbNumW));
+
+  // Lane backgrounds
+  for(let m=kbMin;m<=kbMax;m++){
+    if(isBlack(m))continue;
+    const wi=wkIdx(m)-kbStartWI;
+    if(wi<0||wi>=kbNumW)continue;
+    const fromTop=kbNumW-1-wi;
+    const y=fromTop*wkH;
+    rc.fillStyle=(Math.floor(m/12)%2===0)?'rgba(255,255,255,0.014)':'rgba(0,0,0,0)';
+    rc.fillRect(0,y,W,wkH);
+  }
+  // Lane dividers
+  rc.strokeStyle='rgba(255,255,255,0.04)';rc.lineWidth=0.5;
+  for(let wi=0;wi<=kbNumW;wi++){
+    rc.beginPath();rc.moveTo(0,wi*wkH);rc.lineTo(W,wi*wkH);rc.stroke();
+  }
+  // Beat lines
+  for(const{t,beatIdx}of beatTimes(ct-0.1,ct+lookahead+0.2)){
+    const x=timeToX(t,ct);if(x<0||x>W)continue;
+    const isMeasure=beatIdx%tsig.num===0;
+    rc.strokeStyle=isMeasure?'rgba(201,168,76,0.18)':'rgba(255,255,255,0.04)';
+    rc.lineWidth=isMeasure?1.2:0.5;
+    rc.setLineDash(isMeasure?[]:[4,4]);
+    rc.beginPath();rc.moveTo(x,0);rc.lineTo(x,H);rc.stroke();
+    rc.setLineDash([]);
+  }
+  // Note platforms — extended by NOTE_END_BUF to match collision
+  const NOTE_END_BUF=0.08;
+  const palette=['#00e0c0','#c9a84c','#ff6699','#66aaff','#99ff66','#ff9944','#b38cff'];
+  const si=findFirstVisibleIndex(ct-lookahead-0.25);
+  const ei=findLastVisibleIndex(ct+lookahead+0.25);
+  for(let i=si;i<=ei;i++){
+    const n=noteStates[i];if(!n)continue;
+    const etExt=n.et+NOTE_END_BUF;
+    if(etExt<ct-0.8||n.st>ct+lookahead+0.2)continue;
+    const col=palette[n.track%palette.length];
+    const active=n.st<=ct&&ct<=etExt;
+    const cy=keyY(n.midi);
+    const nh=keyNoteH(n.midi);
+    const x1=timeToX(n.st,ct);
+    const x2=timeToX(etExt,ct);
+    const lx=Math.min(x1,x2);
+    const nw=Math.max(6,Math.abs(x2-x1));
+    if(!n.spawned&&ct>=n.st){spawnParticles(lx,cy,col,2);n.spawned=true;}
+    rc.globalAlpha=active?1:0.55;
+    rc.fillStyle=col;
+    rRect(rc,lx,cy-nh/2,nw,nh,3);rc.fill();
+    rc.globalAlpha=active?0.28:0.1;
+    rc.strokeStyle='rgba(255,255,255,1)';rc.lineWidth=0.5;
+    rRect(rc,lx,cy-nh/2,nw,nh,3);rc.stroke();
+    rc.globalAlpha=1;
+  }
+  // Hit zone line
+  rc.strokeStyle='rgba(201,168,76,0.5)';rc.lineWidth=1;
+  rc.setLineDash([6,4]);
+  rc.beginPath();rc.moveTo(hitX,0);rc.lineTo(hitX,H);rc.stroke();
+  rc.setLineDash([]);
+
+  updateParticles();
+  drawBall();
+
+  // HUD: survive time
+  if(ballActive&&!ball.dead){
+    const t=ballSurviveTime;
+    const min=Math.floor(t/60);const sec=Math.floor(t%60);
+    rc.fillStyle='rgba(201,168,76,0.7)';
+    rc.font='12px "Syne Mono",monospace';
+    rc.textAlign='left';
+    rc.fillText('SURVIVE  '+min+':'+String(sec).padStart(2,'0'),hitX+12,20);
+    rc.textAlign='start';
+  }
+  // J key hint
+  rc.fillStyle='rgba(255,255,255,0.12)';
+  rc.font='10px "Syne Mono",monospace';
+  rc.textAlign='right';
+  rc.fillText('[ J ] JUMP  (×2)',W-12,H-10);
+  rc.textAlign='start';
+}
+
+function gameLoop(now){
   if(!isPlaying)return;
   const ct=curSongTime();
+
+  // Ball physics — compute dt from real clock
+  if(flowMode==='ball'&&ballActive&&!ball.dead){
+    const dt=lastFrameTime!=null?Math.min((now-lastFrameTime)/1000,0.05):0;
+    lastFrameTime=now;
+    updateBallPhysics(dt,ct);
+  }else{
+    lastFrameTime=now;
+  }
+
   drawFrame(ct);
-  // Update BPM display to current tempo at playhead
   document.getElementById('hs-bpm').textContent=Math.round(s2bpm(ct/speed)*speed);
   const last=activeNotes[activeNotes.length-1];
   if(last&&ct>last.et+1.2){
     stopPlay();
     drawFrame(last.et+1.2);
-    // Advance playlist if active
+    // Ball mode: show clear if alive, otherwise let game-over show separately
+    if(flowMode==='ball'&&ballActive&&!ball.dead){
+      ballActive=false;
+      showClear();
+      return;
+    }
     if(playlistMode&&playlistIdx+1<playlist.length){
       const gap=parseFloat(document.getElementById('gap-input').value)||2;
       setTimeout(()=>loadPlaylistEntry(playlistIdx+1,true),gap*1000);
@@ -1247,6 +1622,12 @@ function setMode(m){
   document.getElementById('hs-mode').textContent=m.toUpperCase();
   document.getElementById('mode-top-btn').classList.toggle('active',m==='top');
   document.getElementById('mode-right-btn').classList.toggle('active',m==='right');
+  document.getElementById('mode-ball-btn').classList.toggle('active',m==='ball');
+  // Ball mode: hide keyboard panel
+  const kbWrap=document.getElementById('kb-wrap');
+  kbWrap.style.display=(m==='ball')?'none':'';
+  // Reset ball if entering ball mode
+  if(m==='ball')initBall();
   buildKeyboard();resizeCanvas();drawFrame(curSongTime());
 }
 function onModeChange(){setMode(document.getElementById('mode-sel')?.value||'top');}
@@ -1397,6 +1778,7 @@ document.addEventListener('keydown',ev=>{
   if(ev.target.tagName==='INPUT'||ev.target.tagName==='SELECT')return;
   if(ev.repeat&&ev.key!=='ArrowLeft'&&ev.key!=='ArrowRight')return;
   if(ev.key===' '){ev.preventDefault();isPlaying?stopPlay():startPlay();return;}
+  if(ev.key==='j'||ev.key==='J'){ev.preventDefault();ballJump();return;}
   if(ev.key==='ArrowLeft'){
     ev.preventDefault();
     const pos=Math.max(0,curSongTime()-5);
