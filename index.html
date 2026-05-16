@@ -235,7 +235,7 @@ input[type=range].ctrl{
 <div id="clear-overlay">
   <div class="clear-card">
     <div class="clear-title">✦ CLEAR ✦</div>
-    <div class="clear-sub"勉強してください</div>
+    <div class="clear-sub">最後まで耐え切りました！</div>
     <div class="go-stat" id="clear-score" style="font-size:32px;color:var(--cyan);">0</div>
     <div style="font-size:11px;color:var(--tx3);margin-top:2px;">SCORE</div>
     <div class="go-stat" id="clear-time" style="font-size:18px;margin-top:12px;">0:00</div>
@@ -514,7 +514,8 @@ function buildKeyboard(){
     topWrap.style.borderTop='2px solid #1a1a28';
     topWrap.style.overflow='visible';
 
-    const avail=topWrap.clientWidth||900;
+    // Use canvas.width (always valid) instead of topWrap.clientWidth which may be 0 mid-reflow
+    const avail=canvas.width||rollWrap.clientWidth||window.innerWidth||900;
     kbKeyW=Math.min(36,Math.max(16,Math.floor(avail/kbNumW)));
     const totalW=kbNumW*kbKeyW;
     kbOffX=Math.max(0,(avail-totalW)/2);
@@ -1669,12 +1670,13 @@ function setMode(m){
   document.getElementById('mode-top-btn').classList.toggle('active',m==='top');
   document.getElementById('mode-right-btn').classList.toggle('active',m==='right');
   document.getElementById('mode-ball-btn').classList.toggle('active',m==='ball');
-  // Ball mode: hide keyboard panel
   const kbWrap=document.getElementById('kb-wrap');
   kbWrap.style.display=(m==='ball')?'none':'';
-  // Reset ball if entering ball mode
   if(m==='ball')initBall();
-  buildKeyboard();resizeCanvas();drawFrame(curSongTime());
+  // Wait one frame for DOM reflow before measuring keyboard width
+  requestAnimationFrame(()=>{
+    buildKeyboard();resizeCanvas();drawFrame(curSongTime());
+  });
 }
 function onModeChange(){setMode(document.getElementById('mode-sel')?.value||'top');}
 function onSpeedChange(){
