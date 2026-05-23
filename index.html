@@ -1348,19 +1348,19 @@ function updateBallPhysics(dt,ct){
   // Sort: highest surface first (smallest y)
   platforms.sort((a,b)=>a.top-b.top);
 
-  const RESTITUTION=0.4;
+  const RESTITUTION=0.5;
 
   // Sweep collision — check both top and bottom surfaces
   for(const p of platforms){
     // Landing on top
     if(ball.vy>=0 && prevBottom<=p.top+2 && newBottom>=p.top){
       ball.y=p.top-BALL_R;
+      ball.jumps=0; // reset jumps on floor contact
       ball.vy=-Math.abs(ball.vy)*RESTITUTION;
-      // If bounce too small, settle on ground
-      if(Math.abs(ball.vy)<30){ball.vy=0;ball.onGround=true;ball.jumps=0;}
+      if(Math.abs(ball.vy)<30){ball.vy=0;ball.onGround=true;}
       break;
     }
-    // Hitting ceiling from below
+    // Hitting ceiling from below — no jump reset
     if(ball.vy<0 && (prevY-BALL_R)>=p.bot-2 && (ball.y-BALL_R)<=p.bot){
       ball.vy=Math.abs(ball.vy)*RESTITUTION;
       ball.y=p.bot+BALL_R;
