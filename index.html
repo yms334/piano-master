@@ -219,7 +219,7 @@ input[type=range].ctrl{
 <div id="go-overlay">
   <div class="go-card">
     <div class="go-title">GAME OVER</div>
-    <div class="go-sub">落下したので勉強しよう</div>
+    <div class="go-sub">落下しました</div>
     <div class="go-stat" id="go-score" style="font-size:32px;color:var(--gold2);">0</div>
     <div style="font-size:11px;color:var(--tx3);margin-top:2px;">SCORE</div>
     <div class="go-stat" id="go-time" style="font-size:18px;margin-top:12px;">0:00</div>
@@ -235,7 +235,7 @@ input[type=range].ctrl{
 <div id="clear-overlay">
   <div class="clear-card">
     <div class="clear-title">✦ CLEAR ✦</div>
-    <div class="clear-sub">勉強してください</div>
+    <div class="clear-sub">最後まで耐え切りました！</div>
     <div class="go-stat" id="clear-score" style="font-size:32px;color:var(--cyan);">0</div>
     <div style="font-size:11px;color:var(--tx3);margin-top:2px;">SCORE</div>
     <div class="go-stat" id="clear-time" style="font-size:18px;margin-top:12px;">0:00</div>
@@ -1348,19 +1348,21 @@ function updateBallPhysics(dt,ct){
   // Sort: highest surface first (smallest y)
   platforms.sort((a,b)=>a.top-b.top);
 
+  const RESTITUTION=0.4;
+
   // Sweep collision — check both top and bottom surfaces
   for(const p of platforms){
     // Landing on top
     if(ball.vy>=0 && prevBottom<=p.top+2 && newBottom>=p.top){
       ball.y=p.top-BALL_R;
-      ball.vy=0;
-      ball.onGround=true;
-      ball.jumps=0;
+      ball.vy=-Math.abs(ball.vy)*RESTITUTION;
+      // If bounce too small, settle on ground
+      if(Math.abs(ball.vy)<30){ball.vy=0;ball.onGround=true;ball.jumps=0;}
       break;
     }
     // Hitting ceiling from below
     if(ball.vy<0 && (prevY-BALL_R)>=p.bot-2 && (ball.y-BALL_R)<=p.bot){
-      ball.vy=0;
+      ball.vy=Math.abs(ball.vy)*RESTITUTION;
       ball.y=p.bot+BALL_R;
       break;
     }
