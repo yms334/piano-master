@@ -219,7 +219,7 @@ input[type=range].ctrl{
 <div id="go-overlay">
   <div class="go-card">
     <div class="go-title">GAME OVER</div>
-    <div class="go-sub">このボールのように落ちることのないように勉強に励みましょう</div>
+    <div class="go-sub">落下しました</div>
     <div class="go-stat" id="go-score" style="font-size:32px;color:var(--gold2);">0</div>
     <div style="font-size:11px;color:var(--tx3);margin-top:2px;">SCORE</div>
     <div class="go-stat" id="go-time" style="font-size:18px;margin-top:12px;">0:00</div>
@@ -235,7 +235,7 @@ input[type=range].ctrl{
 <div id="clear-overlay">
   <div class="clear-card">
     <div class="clear-title">✦ CLEAR ✦</div>
-    <div class="clear-sub">勉強してください</div>
+    <div class="clear-sub">最後まで耐え切りました！</div>
     <div class="go-stat" id="clear-score" style="font-size:32px;color:var(--cyan);">0</div>
     <div style="font-size:11px;color:var(--tx3);margin-top:2px;">SCORE</div>
     <div class="go-stat" id="clear-time" style="font-size:18px;margin-top:12px;">0:00</div>
@@ -296,6 +296,9 @@ input[type=range].ctrl{
         style="width:52px;background:var(--s2);border:1px solid var(--bdr2);color:var(--tx);
         padding:3px 6px;font-family:inherit;font-size:11px;text-align:center;">
       <span style="font-size:11px;color:var(--tx2);">秒</span>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--tx2);cursor:pointer;">
+        <input type="checkbox" id="loop-chk"> ループ
+      </label>
       <button class="ctrl" onclick="closePlaylist()">✕ 閉じる</button>
     </div>
   </div>
@@ -1590,6 +1593,10 @@ function gameLoop(now){
     if(playlistMode&&playlistIdx+1<playlist.length){
       const gap=parseFloat(document.getElementById('gap-input').value)||2;
       setTimeout(()=>loadPlaylistEntry(playlistIdx+1,true),gap*1000);
+    }else if(playlistMode&&document.getElementById('loop-chk')?.checked&&playlist.length>0){
+      // Loop: go back to first track
+      const gap=parseFloat(document.getElementById('gap-input').value)||2;
+      setTimeout(()=>loadPlaylistEntry(0,true),gap*1000);
     }else{
       playlistMode=false;
     }
