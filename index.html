@@ -1215,7 +1215,7 @@ function startPlay(){
   if(masterGain){
     masterGain.gain.cancelScheduledValues(ac.currentTime);
     masterGain.gain.setValueAtTime(masterGain.gain.value,ac.currentTime);
-    masterGain.gain.linearRampToValueAtTime(1,ac.currentTime+0.03);
+    masterGain.gain.linearRampToValueAtTime(volume,ac.currentTime+0.03);
   }
 
   if(!isPlaying){
