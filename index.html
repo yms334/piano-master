@@ -198,6 +198,7 @@ input[type=range].ctrl{
   <div class="ov-btns">
     <button class="ov-btn primary" onclick="event.stopPropagation();loadDemo()">▶ デモを再生</button>
     <button class="ov-btn" onclick="event.stopPropagation();document.getElementById('midi-file').click()">📂 ファイルを開く</button>
+    <button class="ov-btn" onclick="event.stopPropagation();triggerOpenFolder()">🗂 フォルダを開く</button>
   </div>
   <div class="ov-hint">Space: 再生 &nbsp;·&nbsp; ←→: ±5s &nbsp;·&nbsp; ↑↓: 音量</div>
 </div>
@@ -1716,10 +1717,9 @@ function triggerOpenFolder(){
 }
 
 // Files to exclude from folder imports (case-insensitive, without extension)
-const FOLDER_EXCLUDE=/^M[1-6]$/i;
+const FOLDER_EXCLUDE=/^motor[1-6]$/i;
 
 function isExcluded(filename){
-  // Strip extension, check against exclude list
   const base=filename.replace(/\.(mid|midi)$/i,'');
   return FOLDER_EXCLUDE.test(base);
 }
