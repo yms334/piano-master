@@ -193,6 +193,7 @@ input[type=range].ctrl{
       クリックして選択してください
     </p>
     <input type="file" id="midi-file" accept=".mid,.midi" style="display:none">
+    <input type="file" id="midi-folder" webkitdirectory multiple style="display:none">
   </div>
   <div class="ov-btns">
     <button class="ov-btn primary" onclick="event.stopPropagation();loadDemo()">▶ デモを再生</button>
@@ -249,6 +250,7 @@ input[type=range].ctrl{
 
 <div id="controls">
   <button class="ctrl" onclick="triggerOpen()" title="MIDIファイルを開く（複数選択可）">📂 開く</button>
+  <button class="ctrl" onclick="triggerOpenFolder()" title="フォルダを選択（M1〜M6以外を追加）">🗂 フォルダ</button>
   <button class="ctrl" onclick="openPlaylist()" title="プレイリスト管理">☰ リスト</button>
   <div class="sep"></div>
   <select class="ctrl" id="track-sel" disabled onchange="onTrackChange()"><option>— Track —</option></select>
@@ -305,6 +307,7 @@ input[type=range].ctrl{
   <div id="playlist-list" style="overflow-y:auto;flex:1;padding:8px 0;"></div>
   <div style="padding:12px 18px;border-top:1px solid var(--bdr);display:flex;gap:8px;flex-shrink:0;">
     <button class="ctrl" onclick="triggerOpen()">＋ ファイルを追加</button>
+    <button class="ctrl" onclick="triggerOpenFolder()">🗂 フォルダを追加</button>
     <button class="ctrl" onclick="clearPlaylist()">🗑 リストをクリア</button>
     <button class="ctrl primary" onclick="startPlaylist()" style="margin-left:auto;">▶ 最初から再生</button>
   </div>
@@ -1708,6 +1711,19 @@ function triggerOpen(){
   fi.click();
 }
 
+function triggerOpenFolder(){
+  document.getElementById('midi-folder').click();
+}
+
+// Files to exclude from folder imports (case-insensitive, without extension)
+const FOLDER_EXCLUDE=/^M[1-6]$/i;
+
+function isExcluded(filename){
+  // Strip extension, check against exclude list
+  const base=filename.replace(/\.(mid|midi)$/i,'');
+  return FOLDER_EXCLUDE.test(base);
+}
+
 function loadDemo(){
   const parsed=buildDemoNotes();
   playlist=[{name:'Demo — きらきら星',parsed}];
@@ -1806,6 +1822,15 @@ function addFilesToPlaylist(files){
 
 document.getElementById('midi-file').addEventListener('change',e=>{
   if(e.target.files.length)addFilesToPlaylist(e.target.files);
+  e.target.value='';
+});
+
+document.getElementById('midi-folder').addEventListener('change',e=>{
+  const files=Array.from(e.target.files).filter(f=>{
+    const isMidi=f.name.endsWith('.mid')||f.name.endsWith('.midi');
+    return isMidi&&!isExcluded(f.name);
+  });
+  if(files.length)addFilesToPlaylist(files);
   e.target.value='';
 });
 
