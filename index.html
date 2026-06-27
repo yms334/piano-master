@@ -258,6 +258,7 @@ input[type=range].ctrl{
   <div class="sep"></div>
   <button class="ctrl" id="mode-top-btn" onclick="setMode('top')" title="上から流れる">↓ TOP</button>
   <button class="ctrl" id="mode-right-btn" onclick="setMode('right')" title="右から流れる">← RIGHT</button>
+  <button class="ctrl" id="mode-star-btn" onclick="setMode('star')" title="遠近感モード">✦ STAR</button>
   <button class="ctrl" id="mode-ball-btn" onclick="setMode('ball')" title="ボールゲームモード">● BALL</button>
   <div class="sep"></div>
   <span class="ctrl-label">SPEED</span>
@@ -514,8 +515,8 @@ function buildKeyboard(){
   kb.innerHTML='';
   for(const k in kbEls)delete kbEls[k];
 
-  if(flowMode==='top'){
-    // ── HORIZONTAL keyboard (top mode) ──
+  if(flowMode==='top'||flowMode==='star'){
+    // ── HORIZONTAL keyboard (top mode / star mode) ──
     topWrap.style.display='block';
     topWrap.style.height="130px";
     topWrap.style.borderTop='2px solid #1a1a28';
@@ -1006,13 +1007,176 @@ function drawHitZone(ctx,W,H){
   }
 }
 
+// ══════════════════════════════════════════════════════════
+// STAR MODE — 3D perspective highway
+// ══════════════════════════════════════════════════════════
+function starPersp(songTime,ct){
+  const H=canvas.height;
+  const VP_Y=H*0.06;
+  const dt=songTime-ct;
+  if(dt>=lookahead)return{y:VP_Y,s:0};
+  const p=Math.max(0,1-dt/lookahead);
+  const s=Math.pow(p,2.2);
+  return{y:VP_Y+(H-VP_Y)*s, s};
+}
+
+// Rounding helper for hex color + alpha suffix
+function hexA(col,a){
+  const h=Math.round(a*255).toString(16).padStart(2,'0');
+  return col+h;
+}
+
+function drawStarMode(ct){
+  const W=canvas.width,H=canvas.height;
+  const VP_Y=H*0.06;
+  const VP_X=W/2;
+  const palette=['#00e0c0','#c9a84c','#ff6699','#66aaff','#99ff66','#ff9944','#b38cff'];
+
+  // ── Background ──
+  rc.fillStyle='#03030a';rc.fillRect(0,0,W,H);
+
+  // Static star field
+  if(!drawStarMode._stars){
+    drawStarMode._stars=Array.from({length:160},()=>({
+      x:Math.random(),y:Math.random(),r:Math.random()*1.2+0.3,a:Math.random()*0.7+0.15
+    }));
+  }
+  for(const st of drawStarMode._stars){
+    const sy=st.y*VP_Y*0.98;
+    rc.globalAlpha=st.a;
+    rc.fillStyle='#fff';
+    rc.beginPath();rc.arc(st.x*W,sy,st.r,0,Math.PI*2);rc.fill();
+  }
+  rc.globalAlpha=1;
+
+  // ── Highway ──
+  const kbLeft=kbOffX;
+  const kbRight=kbOffX+kbNumW*kbKeyW;
+  // Road fill
+  rc.beginPath();
+  rc.moveTo(VP_X,VP_Y);
+  rc.lineTo(kbLeft,H);
+  rc.lineTo(kbRight,H);
+  rc.closePath();
+  const roadGrad=rc.createLinearGradient(0,VP_Y,0,H);
+  roadGrad.addColorStop(0,'rgba(10,10,30,0)');
+  roadGrad.addColorStop(0.6,'rgba(14,14,38,0.45)');
+  roadGrad.addColorStop(1,'rgba(18,18,48,0.7)');
+  rc.fillStyle=roadGrad;rc.fill();
+
+  // Lane dividers
+  for(const midi in kbEls){
+    const m=parseInt(midi);
+    if(isBlack(m))continue;
+    const el=kbEls[m];if(!el)continue;
+    const fullX=parseFloat(el.style.left||0)+kbOffX;
+    rc.beginPath();rc.moveTo(VP_X,VP_Y);rc.lineTo(fullX,H);
+    rc.strokeStyle=`rgba(255,255,255,${m%12===0?0.10:0.04})`;
+    rc.lineWidth=m%12===0?1.2:0.5;
+    rc.stroke();
+  }
+
+  // Side rails
+  for(const edge of[kbLeft,kbRight]){
+    const grad=rc.createLinearGradient(0,VP_Y,0,H);
+    grad.addColorStop(0,'rgba(201,168,76,0)');
+    grad.addColorStop(1,'rgba(201,168,76,0.55)');
+    rc.beginPath();rc.moveTo(VP_X,VP_Y);rc.lineTo(edge,H);
+    rc.strokeStyle=grad;rc.lineWidth=1.5;rc.stroke();
+  }
+
+  // Beat / measure lines
+  for(const{t,beatIdx}of beatTimes(ct-0.05,ct+lookahead)){
+    const{y,s}=starPersp(t,ct);
+    if(y<VP_Y||y>H)continue;
+    const isMeasure=beatIdx%tsig.num===0;
+    const lx=VP_X+(kbLeft-VP_X)*s, rx=VP_X+(kbRight-VP_X)*s;
+    rc.beginPath();rc.moveTo(lx,y);rc.lineTo(rx,y);
+    rc.strokeStyle=isMeasure?`rgba(201,168,76,${0.32*s})`:`rgba(255,255,255,${0.07*s})`;
+    rc.lineWidth=isMeasure?1.2:0.5;
+    rc.setLineDash(isMeasure?[]:[Math.max(1,4*s),Math.max(1,4*s)]);
+    rc.stroke();rc.setLineDash([]);
+  }
+
+  // ── Notes as perspective quads ──
+  const si=findFirstVisibleIndex(ct-0.15);
+  const ei=findLastVisibleIndex(ct+lookahead+0.1);
+
+  for(let i=si;i<=ei;i++){
+    const n=noteStates[i];if(!n)continue;
+    if(n.et<ct-0.1||n.st>ct+lookahead)continue;
+
+    const col=palette[n.track%palette.length];
+    const fullX=keyX(n.midi);if(fullX===null)continue;
+    const fullHW=(isBlack(n.midi)?kbKeyW*0.56:kbKeyW*0.86)/2;
+
+    // Near edge = note head (clamp to ct so active notes show at bottom)
+    const tNear=Math.max(n.st,ct-0.02);
+    const tFar=Math.min(n.et,ct+lookahead);
+    if(tFar<=tNear)continue;
+
+    const{y:yN,s:sN}=starPersp(tNear,ct);
+    const{y:yF,s:sF}=starPersp(tFar,ct);
+
+    const xNL=VP_X+(fullX-fullHW-VP_X)*sN, xNR=VP_X+(fullX+fullHW-VP_X)*sN;
+    const xFL=VP_X+(fullX-fullHW-VP_X)*sF, xFR=VP_X+(fullX+fullHW-VP_X)*sF;
+
+    const yNear=Math.min(yN,H+2), yFar=Math.max(yF,VP_Y);
+    if(yNear<VP_Y||yFar>H+2)continue;
+
+    // Body gradient (brighter near bottom)
+    const noteGrad=rc.createLinearGradient(0,yFar,0,yNear);
+    noteGrad.addColorStop(0,col+'28');
+    noteGrad.addColorStop(0.6,col+'99');
+    noteGrad.addColorStop(1,col+'ee');
+    rc.beginPath();
+    rc.moveTo(xFL,yFar);rc.lineTo(xFR,yFar);
+    rc.lineTo(xNR,yNear);rc.lineTo(xNL,yNear);
+    rc.closePath();
+    rc.fillStyle=noteGrad;rc.fill();
+
+    // Near edge glow line
+    rc.beginPath();rc.moveTo(xNL,yNear);rc.lineTo(xNR,yNear);
+    rc.strokeStyle=col;rc.lineWidth=Math.max(1.5,sN*4);
+    rc.globalAlpha=Math.min(1,sN+0.3);rc.stroke();rc.globalAlpha=1;
+
+    // Side edges
+    rc.beginPath();rc.moveTo(xFL,yFar);rc.lineTo(xNL,yNear);
+    rc.moveTo(xFR,yFar);rc.lineTo(xNR,yNear);
+    rc.strokeStyle=col+'55';rc.lineWidth=0.5;rc.stroke();
+
+    if(!n.spawned&&ct>=n.st){spawnParticles(fullX,H,col,4);n.spawned=true;}
+  }
+
+  // ── Hit line glow ──
+  const hitGrad=rc.createLinearGradient(0,H-60,0,H);
+  hitGrad.addColorStop(0,'rgba(201,168,76,0)');
+  hitGrad.addColorStop(1,'rgba(201,168,76,0.18)');
+  rc.fillStyle=hitGrad;rc.fillRect(kbLeft,H-60,kbRight-kbLeft,60);
+
+  // Horizon glow
+  const horzGrad=rc.createRadialGradient(VP_X,VP_Y,0,VP_X,VP_Y,W*0.4);
+  horzGrad.addColorStop(0,'rgba(100,80,200,0.18)');
+  horzGrad.addColorStop(1,'rgba(0,0,0,0)');
+  rc.fillStyle=horzGrad;rc.fillRect(0,0,W,VP_Y*3);
+
+  updateParticles();
+  updateKeyState(ct);
+
+  const last=activeNotes[activeNotes.length-1];
+  if(last){
+    document.getElementById('hs-now').textContent=formatTime(ct);
+    const pf=document.getElementById('progress-fill');
+    if(pf)pf.style.width=(Math.min(1,Math.max(0,ct/(last.et+0.5)))*100)+'%';
+  }
+}
+
 function drawFrame(ct){
   const W=canvas.width,H=canvas.height;
   rc.clearRect(0,0,W,H);
 
   if(flowMode==='ball'){
     drawBallMode(ct);
-    // update progress
     const last=activeNotes[activeNotes.length-1];
     if(last){
       document.getElementById('hs-now').textContent=formatTime(ct);
@@ -1020,6 +1184,11 @@ function drawFrame(ct){
       const pf=document.getElementById('progress-fill');
       if(pf)pf.style.width=(prog*100)+'%';
     }
+    return;
+  }
+
+  if(flowMode==='star'){
+    drawStarMode(ct);
     return;
   }
 
@@ -1682,6 +1851,7 @@ function setMode(m){
   document.getElementById('hs-mode').textContent=m.toUpperCase();
   document.getElementById('mode-top-btn').classList.toggle('active',m==='top');
   document.getElementById('mode-right-btn').classList.toggle('active',m==='right');
+  document.getElementById('mode-star-btn').classList.toggle('active',m==='star');
   document.getElementById('mode-ball-btn').classList.toggle('active',m==='ball');
   const kbWrap=document.getElementById('kb-wrap');
   kbWrap.style.display=(m==='ball')?'none':'';
