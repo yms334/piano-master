@@ -1041,20 +1041,31 @@ function drawStarMode(ct){
 
   // Static star field — spread across the entire canvas
   if(!drawStarMode._stars||drawStarMode._W!==W||drawStarMode._H!==H){
-    drawStarMode._stars=Array.from({length:350},()=>({
+    const starColors=['#ffffff','#ffe8cc','#cce8ff','#ffeeaa','#ddeeff'];
+    drawStarMode._stars=Array.from({length:220},()=>({
       x:Math.random(),y:Math.random(),
-      r:Math.random()*1.4+0.2,
-      a:Math.random()*0.65+0.12,
-      twinkle:Math.random()*Math.PI*2
+      r:Math.random()*2.2+0.6,
+      a:Math.random()*0.55+0.35,
+      twinkle:Math.random()*Math.PI*2,
+      color:starColors[Math.floor(Math.random()*starColors.length)]
     }));
     drawStarMode._W=W;drawStarMode._H=H;
   }
   const twinkleT=performance.now()/1000;
   for(const st of drawStarMode._stars){
-    const flicker=0.75+0.25*Math.sin(twinkleT*0.9+st.twinkle);
+    const flicker=0.8+0.2*Math.sin(twinkleT*0.7+st.twinkle);
+    const sx=st.x*W, sy=st.y*H;
+    // Glow halo
+    rc.globalAlpha=st.a*flicker*0.25;
+    rc.fillStyle=st.color;
+    rc.beginPath();rc.arc(sx,sy,st.r*3.5,0,Math.PI*2);rc.fill();
+    // Mid glow
+    rc.globalAlpha=st.a*flicker*0.5;
+    rc.beginPath();rc.arc(sx,sy,st.r*1.8,0,Math.PI*2);rc.fill();
+    // Core
     rc.globalAlpha=st.a*flicker;
     rc.fillStyle='#fff';
-    rc.beginPath();rc.arc(st.x*W,st.y*H,st.r,0,Math.PI*2);rc.fill();
+    rc.beginPath();rc.arc(sx,sy,st.r,0,Math.PI*2);rc.fill();
   }
   rc.globalAlpha=1;
 
@@ -1114,35 +1125,35 @@ function drawStarMode(ct){
   }
 
   // ── Notes: perspective trapezoids with correct top-edge clipping ──
-  // Scale at y=0 (window top) for clipping far-end X coordinates
   const sClipTop=(0-VP_Y)/(H-VP_Y);
 
   const si=findFirstVisibleIndex(ct-0.15);
   const ei=findLastVisibleIndex(ct+lookahead+0.1);
   for(let i=si;i<=ei;i++){
     const n=noteStates[i];if(!n)continue;
-    if(n.et<ct-0.1||n.st>ct+lookahead)continue;
+    if(n.et<ct-0.05||n.st>ct+lookahead)continue;
 
     const col=palette[n.track%palette.length];
     const fullX=keyX(n.midi);if(fullX===null)continue;
     const fullHW=(isBlack(n.midi)?kbKeyW*0.56:kbKeyW*0.86)/2;
 
-    const tNear=Math.max(n.st,ct-0.02);
     const tFar=Math.min(n.et,ct+lookahead);
-    if(tFar<=tNear)continue;
 
-    const{y:yN,s:sN}=starPersp(tNear,ct);
+    // Near edge: pin exactly to hit line (y=H, s=1) while note is playing
+    // This prevents the jump and keeps note visible for full duration
+    const isPlaying=(ct>=n.st&&ct<=n.et);
+    const sN=isPlaying?1:starPersp(n.st,ct).s;
+    const yNear=isPlaying?H:Math.min(starPersp(n.st,ct).y,H);
+
     const{y:yF,s:sF}=starPersp(tFar,ct);
-
-    // Clip far edge to y=0; recalculate X using the scale AT y=0
     const yFarDraw=Math.max(yF,0);
     const sFarDraw=yF<0?sClipTop:sF;
 
+    if(yNear<=0&&yFarDraw<=0)continue;
+    if(yFarDraw>=H&&!isPlaying)continue;
+
     const xNL=VP_X+(fullX-fullHW-VP_X)*sN, xNR=VP_X+(fullX+fullHW-VP_X)*sN;
     const xFL=VP_X+(fullX-fullHW-VP_X)*sFarDraw, xFR=VP_X+(fullX+fullHW-VP_X)*sFarDraw;
-
-    const yNear=Math.min(yN,H+2);
-    if(yNear<0||yFarDraw>H+2)continue;
 
     const noteGrad=rc.createLinearGradient(0,yFarDraw,0,yNear);
     noteGrad.addColorStop(0,col+'22');
