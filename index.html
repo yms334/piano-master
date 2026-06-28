@@ -1113,7 +1113,7 @@ function drawStarMode(ct){
     rc.stroke();rc.setLineDash([]);
   }
 
-  // ── Notes as perspective quads ──
+  // ── Notes: rectangle lanes — X fixed, only Y uses perspective ──
   const si=findFirstVisibleIndex(ct-0.15);
   const ei=findLastVisibleIndex(ct+lookahead+0.1);
   for(let i=si;i<=ei;i++){
@@ -1128,33 +1128,28 @@ function drawStarMode(ct){
     const tFar=Math.min(n.et,ct+lookahead);
     if(tFar<=tNear)continue;
 
-    const{y:yN,s:sN}=starPersp(tNear,ct);
-    const{y:yF,s:sF}=starPersp(tFar,ct);
+    const{y:yNear,s:sN}=starPersp(tNear,ct);
+    const{y:yFar}=starPersp(tFar,ct);
 
-    const xNL=VP_X+(fullX-fullHW-VP_X)*sN, xNR=VP_X+(fullX+fullHW-VP_X)*sN;
-    const xFL=VP_X+(fullX-fullHW-VP_X)*sF, xFR=VP_X+(fullX+fullHW-VP_X)*sF;
+    // Fixed X — no convergence, notes are parallel rectangles
+    const xL=fullX-fullHW, xR=fullX+fullHW;
+    const yTop=Math.max(yFar,0), yBot=Math.min(yNear,H+2);
+    if(yTop>H||yBot<0)continue;
 
-    const yNear=Math.min(yN,H+2), yFarC=Math.max(yF,0);
-    if(yNear<0||yFarC>H+2)continue;
-
-    const noteGrad=rc.createLinearGradient(0,yFarC,0,yNear);
+    // Body gradient
+    const noteGrad=rc.createLinearGradient(0,yTop,0,yBot);
     noteGrad.addColorStop(0,col+'22');
     noteGrad.addColorStop(0.5,col+'88');
     noteGrad.addColorStop(1,col+'ee');
     rc.beginPath();
-    rc.moveTo(xFL,yFarC);rc.lineTo(xFR,yFarC);
-    rc.lineTo(xNR,yNear);rc.lineTo(xNL,yNear);rc.closePath();
+    rc.moveTo(xL,yTop);rc.lineTo(xR,yTop);
+    rc.lineTo(xR,yBot);rc.lineTo(xL,yBot);rc.closePath();
     rc.fillStyle=noteGrad;rc.fill();
 
-    // Near edge glow
-    rc.beginPath();rc.moveTo(xNL,yNear);rc.lineTo(xNR,yNear);
+    // Near edge glow (leading edge)
+    rc.beginPath();rc.moveTo(xL,yBot);rc.lineTo(xR,yBot);
     rc.strokeStyle=col;rc.lineWidth=Math.max(1.5,sN*4);
     rc.globalAlpha=Math.min(1,sN+0.25);rc.stroke();rc.globalAlpha=1;
-
-    // Side edges
-    rc.beginPath();rc.moveTo(xFL,yFarC);rc.lineTo(xNL,yNear);
-    rc.moveTo(xFR,yFarC);rc.lineTo(xNR,yNear);
-    rc.strokeStyle=col+'44';rc.lineWidth=0.5;rc.stroke();
 
     if(!n.spawned&&ct>=n.st){spawnParticles(fullX,H,col,4);n.spawned=true;}
   }
