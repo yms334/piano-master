@@ -1127,7 +1127,8 @@ function drawStarMode(ct){
   // ── Notes: perspective trapezoids with correct top-edge clipping ──
   const sClipTop=(0-VP_Y)/(H-VP_Y);
 
-  const si=findFirstVisibleIndex(ct-0.15);
+  // Look back far enough to include any currently-playing long note (up to 120s)
+  const si=findFirstVisibleIndex(Math.max(0,ct-120));
   const ei=findLastVisibleIndex(ct+lookahead+0.1);
   for(let i=si;i<=ei;i++){
     const n=noteStates[i];if(!n)continue;
